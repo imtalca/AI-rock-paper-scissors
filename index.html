@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>RPS vs AI</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 40px; }
+    .moves {
+      display: flex;
+      justify-content: center;
+      perspective: 800px;
+    }
+    button {
+      font-size: 2rem;
+      margin: 10px;
+      cursor: pointer;
+      border: none;
+      background: none;
+      padding: 0;
+      transition: transform 0.25s ease, filter 0.25s ease;
+    }
+    button:hover {
+      transform: translateY(-8px) scale(1.05);
+    }
+    button.selected {
+      transform: translateY(-25px) scale(1.2) rotateX(10deg);
+      filter: drop-shadow(0 20px 12px rgba(0, 0, 0, 0.35));
+    }
+    button img { width: 250px; height: 250px; object-fit: contain; display: block; }
+    #result { font-size: 1.5rem; margin-top: 20px; }
+    #score { font-size: 1.1rem; color: #555; }
+    #brain { font-size: 0.95rem; color: #888; margin-top: 12px; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <h1>Rock, Paper, Scissors</h1>
+  <div class="moves">
+    <button data-move="rock"><img src="rock_transparent.png" alt="Rock"></button>
+    <button data-move="paper"><img src="paper_transparent.png" alt="Paper"></button>
+    <button data-move="scissors"><img src="scissors_transparent.png" alt="Scissors"></button>
+  </div>
+
+  <div id="result">Make a move!</div>
+  <div id="score">You: 0 &nbsp; AI: 0 &nbsp; Ties: 0</div>
+  <div id="brain">AI is watching you...</div>
+
+  <script>
+    tf.setBackend("cpu").then(() => {
+      console.log("TF.js backend:", tf.getBackend());
+    });
+
+    const MOVES = ["rock", "paper", "scissors"];
+    let score = { you: 0, ai: 0, ties: 0 };
+
+    // Returns a random move. Used as a fallback until the model is trained.
+    function randomAIMove() {
+      const index = Math.floor(Math.random() * MOVES.length);
+      return MOVES[index];
+    }
+
+    // Returns "you", "ai", or "tie" for two moves.
+    // Rock beats scissors, scissors beats paper, paper beats rock.
+    function decideWinner(you, ai) {
+      if (you === ai) return "tie";
+      const youWin =
+        (you === "rock" && ai === "scissors") ||
+        (you === "scissors" && ai === "paper") ||
+        (you === "paper" && ai === "rock");
+      return youWin ? "you" : "ai";
+    }
+
+    const WINDOW = 6;          // how many past moves the model looks at
+    const history = [];        // every move the PLAYER has made, in order
+    let model = null;
+    let isTraining = false;
+
+    // What beats each move.
+    const COUNTER = { rock: "paper", paper: "scissors", scissors: "rock" };
+
+    // Turns a move into a one-hot vector the network can read:
+    //   "rock" → [1, 0, 0]   "paper" → [0, 1, 0]   "scissors" → [0, 0, 1]
+    // One-hot (instead of 0/1/2) means no move looks "bigger" than another.
+    function oneHot(move) {
+      const vec = [0, 0, 0];
+      const index = MOVES.indexOf(move);  // rock → 0, paper → 1, scissors → 2
+      vec[index] = 1;
+      return vec;
+    }
+
+    // Turns `history` into training examples by sliding a window across it:
+    //   input  (x) = the WINDOW moves before position i, one one-hot row per move
+    //   target (y) = the move at position i, one-hot (3 numbers)
+    // e.g. with WINDOW = 3, [rock, rock, paper, rock] → x = [[1,0,0], [1,0,0], [0,1,0]], y = [1,0,0]
+    // Returns { xs, ys } as tensors, or null if there aren't enough moves yet.
+    function buildDataset() {
+      // Need WINDOW moves of context PLUS one move to predict.
+      if (history.length <= WINDOW) return null;
+
+      const xArrays = [];
+      const yArrays = [];
+
+      // i = index of the move we're trying to predict.
+      for (let i = WINDOW; i < history.length; i++) {
+        const pastMoves = history.slice(i - WINDOW, i);  // the WINDOW moves before i
+        xArrays.push(pastMoves.map(oneHot));             // → WINDOW rows of 3
+        yArrays.push(oneHot(history[i]));                // → 3 numbers
+      }
+
+      return {
+        xs: tf.tensor3d(xArrays),  // shape [examples, WINDOW, 3]
+        ys: tf.tensor2d(yArrays),  // shape [examples, 3]
+      };
+    }
+
+    // Builds and compiles the network:
+    //   LSTM layer:   reads the moves one at a time, in order, keeping a
+    //                 16-number "memory" of what it has seen so far
+    //   output layer: 3 softmax units → probabilities that sum to 1
+    function createModel() {
+      const model = tf.sequential({
+        layers: [
+          tf.layers.lstm({ units: 16, inputShape: [WINDOW, 3], name: "hidden" }),
+          tf.layers.dense({ units: 3, activation: "softmax", name: "output" }),
+        ],
+      });
+      model.compile({ optimizer: "adam", loss: "categoricalCrossentropy" });
+      return model;
+    }
+
+    // Picks the AI's move: predicts the player's next move from their last
+    // WINDOW moves and plays the counter. Falls back to random until the
+    // model exists. Runs BEFORE the player's current move is added to
+    // history, so the AI can't peek at what was just clicked.
+    function smartAIMove() {
+      // No model yet, or not enough moves to fill a window → guess.
+      if (history.length < WINDOW || model === null) {
+        return randomAIMove();
+      }
+
+      // 1. Last WINDOW moves → one-hot rows (same format as one example of xs).
+      const lastMoves = history.slice(-WINDOW);   // e.g. ["rock", "rock", "paper", ...]
+      const input = lastMoves.map(oneHot);        // e.g. [[1,0,0], [1,0,0], [0,1,0], ...]
+
+      // 2. Wrap it as a batch of ONE example: shape [1, WINDOW, 3].
+      const inputTensor = tf.tensor3d([input]);
+
+      // 3. Run the network. Output shape [1, 3]; dataSync() → plain array.
+      const outputTensor = model.predict(inputTensor);
+      const probs = outputTensor.dataSync();      // e.g. [0.6, 0.3, 0.1]
+
+      // 4. Free the tensors' memory (TF.js doesn't do it automatically).
+      inputTensor.dispose();
+      outputTensor.dispose();
+
+      // 5. Find the most likely move (the "argmax").
+      let best = 0;
+      for (let i = 1; i < probs.length; i++) {
+        if (probs[i] > probs[best]) best = i;
+      }
+      const predicted = MOVES[best];
+
+      // Bonus: show what the AI expected THIS round (before seeing your move).
+      document.getElementById("brain").textContent =
+        `AI expected you to play ${predicted}  ` +
+        `(rock ${(probs[0] * 100).toFixed(0)}%  ` +
+        `paper ${(probs[1] * 100).toFixed(0)}%  ` +
+        `scissors ${(probs[2] * 100).toFixed(0)}%)`;
+
+      // 6. Play whatever beats the predicted move.
+      return COUNTER[predicted];
+    }
+
+    // Trains the model on the whole history so far (creating it on first
+    // use). Skips if a training run is already in progress.
+    async function trainModel() {
+      if (isTraining) return;             // busy? skip this round
+
+      const data = buildDataset();        // build ONCE, reuse
+      if (data === null) return;          // not enough moves yet
+
+      isTraining = true;                  // busy sign UP
+      try {
+        if (model === null) {
+          model = createModel();          // no `const`: fill the GLOBAL model
+        }
+        await model.fit(data.xs, data.ys, { epochs: 20, shuffle: true });
+      } finally {
+        isTraining = false;               // busy sign DOWN, even if fit crashed
+        data.xs.dispose();
+        data.ys.dispose();
+      }
+    }
+
+    // Plays a round when a move button is clicked: gets the AI's move,
+    // records the player's move, trains, and updates the score display.
+    document.querySelectorAll("button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("button").forEach(b => b.classList.remove("selected"));
+        btn.classList.add("selected");
+
+        const yourMove = btn.dataset.move;
+        const aiMove = smartAIMove();
+        history.push(yourMove);         // only AFTER the AI has committed
+        trainModel();                   // runs in the background
+        const winner = decideWinner(yourMove, aiMove);
+
+        if (winner === "you") score.you++;
+        else if (winner === "ai") score.ai++;
+        else score.ties++;
+
+        const resultText =
+          winner === "tie"
+            ? `Tie! You both played ${yourMove}.`
+            : winner === "you"
+              ? `You win! ${yourMove} beats ${aiMove}.`
+              : `AI wins! ${aiMove} beats ${yourMove}.`;
+
+        document.getElementById("result").textContent = resultText;
+        document.getElementById("score").textContent =
+          `You: ${score.you}   AI: ${score.ai}   Ties: ${score.ties}`;
+      });
+    });
+  </script>
+</body>
+</html>
