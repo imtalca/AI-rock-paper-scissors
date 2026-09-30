@@ -1,0 +1,927 @@
+{
+  "player": "Claude Opus 5.5 (claude-opus-5-5)",
+  "opponent": "attention model (move+position one-hot input, Q/K/V self-attention, WINDOW=6)",
+  "condition": "blind: the 'AI expected you to play ...' line and its probabilities were hidden during play; they were filled in here from the saved state after the match",
+  "date": "2026-09-30",
+  "rounds_played": 70,
+  "score": {
+    "player_wins": 27,
+    "ai_wins": 18,
+    "ties": 25,
+    "player_win_rate": 0.386,
+    "ai_win_rate": 0.257,
+    "tie_rate": 0.357
+  },
+  "strategy_summary": [
+    "Rounds 1-7: the AI plays randomly, so I used the same all-paper opening as the match with hints. Luck went against me here (1 win, 4 losses, 2 ties).",
+    "With the probabilities hidden I still knew two things: the rules from the code (random for 7 rounds, a 6-move window, it plays the counter to its top guess), and therefore its top guess each round, because its move reveals it. What I lost was its confidence.",
+    "My method was to work out which follow-ups to my last one to three moves it had seen me play, assume it expects one of those, and play the move that beats or ties the counters to its two likeliest guesses. I also watched for it holding the same guess for several rounds.",
+    "Where the missing percentages hurt: I could not tell when it was about to switch guess (round 19), or whether an older memory, a recent memory or its current bias would win (rounds 21, 32, 50). It also learned two real habits of mine, paper after rock and paper after scissors, plus my alternations, which cost rounds 41, 42, 51, 52 and 55.",
+    "Result: 27 wins, 18 losses, 25 ties. In the 63 model rounds alone it was 26-14-23. The AI's top guess matched my move in 14 of 63 model rounds (22%). When it was at least 90% confident (20 rounds) it was right 4 times.",
+    "Comparison: with hints the same player scored 30-12-28 (27-10-26 in model rounds) and the AI's guess matched in 10 of 63 rounds. One match each way is a small sample, so the gap is suggestive, not proof."
+  ],
+  "score_by_segment": [
+    {
+      "rounds": "1-7",
+      "player_wins": 1,
+      "ai_wins": 4,
+      "ties": 2
+    },
+    {
+      "rounds": "8-35",
+      "player_wins": 13,
+      "ai_wins": 4,
+      "ties": 11
+    },
+    {
+      "rounds": "36-70",
+      "player_wins": 13,
+      "ai_wins": 10,
+      "ties": 12
+    }
+  ],
+  "rounds": [
+    {
+      "round": 1,
+      "player": "paper",
+      "ai": "scissors",
+      "winner": "ai",
+      "ai_expected": null,
+      "ai_probs_rock_paper_scissors": null,
+      "rationale": "AI is random for the first 7 rounds; same paper opening as the match with hints, for comparability."
+    },
+    {
+      "round": 2,
+      "player": "paper",
+      "ai": "scissors",
+      "winner": "ai",
+      "ai_expected": null,
+      "ai_probs_rock_paper_scissors": null,
+      "rationale": "Random phase; paper."
+    },
+    {
+      "round": 3,
+      "player": "paper",
+      "ai": "paper",
+      "winner": "tie",
+      "ai_expected": null,
+      "ai_probs_rock_paper_scissors": null,
+      "rationale": "Random phase; paper."
+    },
+    {
+      "round": 4,
+      "player": "paper",
+      "ai": "scissors",
+      "winner": "ai",
+      "ai_expected": null,
+      "ai_probs_rock_paper_scissors": null,
+      "rationale": "Random phase; paper."
+    },
+    {
+      "round": 5,
+      "player": "paper",
+      "ai": "paper",
+      "winner": "tie",
+      "ai_expected": null,
+      "ai_probs_rock_paper_scissors": null,
+      "rationale": "Random phase; paper."
+    },
+    {
+      "round": 6,
+      "player": "paper",
+      "ai": "scissors",
+      "winner": "ai",
+      "ai_expected": null,
+      "ai_probs_rock_paper_scissors": null,
+      "rationale": "Random phase; paper."
+    },
+    {
+      "round": 7,
+      "player": "paper",
+      "ai": "rock",
+      "winner": "player",
+      "ai_expected": null,
+      "ai_probs_rock_paper_scissors": null,
+      "rationale": "Last random round; paper."
+    },
+    {
+      "round": 8,
+      "player": "rock",
+      "ai": "scissors",
+      "winner": "player",
+      "ai_expected": "paper",
+      "ai_probs_rock_paper_scissors": [
+        0.27,
+        0.53,
+        0.19
+      ],
+      "rationale": "First model round. It has only seen paper follow paper, so it should play scissors; rock."
+    },
+    {
+      "round": 9,
+      "player": "scissors",
+      "ai": "scissors",
+      "winner": "tie",
+      "ai_expected": "paper",
+      "ai_probs_rock_paper_scissors": [
+        0.28,
+        0.6,
+        0.11
+      ],
+      "rationale": "It has seen only paper and rock as follow-ups, so it plays scissors or paper; scissors cannot lose to either."
+    },
+    {
+      "round": 10,
+      "player": "rock",
+      "ai": "scissors",
+      "winner": "player",
+      "ai_expected": "paper",
+      "ai_probs_rock_paper_scissors": [
+        0.36,
+        0.44,
+        0.2
+      ],
+      "rationale": "It played scissors again, so it still expects paper, and it learns slowly this early; rock."
+    },
+    {
+      "round": 11,
+      "player": "scissors",
+      "ai": "scissors",
+      "winner": "tie",
+      "ai_expected": "paper",
+      "ai_probs_rock_paper_scissors": [
+        0.34,
+        0.37,
+        0.29
+      ],
+      "rationale": "Rock is now my most common recent move, so its guess should tip to rock and it plays paper; scissors beats that and ties scissors."
+    },
+    {
+      "round": 12,
+      "player": "rock",
+      "ai": "rock",
+      "winner": "tie",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0.29,
+        0.31,
+        0.39
+      ],
+      "rationale": "It has played scissors four times running, so it is stuck on paper; without percentages I cannot tell how close it is to switching. Rock again."
+    },
+    {
+      "round": 13,
+      "player": "paper",
+      "ai": "rock",
+      "winner": "player",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0.26,
+        0.21,
+        0.54
+      ],
+      "rationale": "It played rock, so it left paper and now expects scissors or rock; paper beats rock and ties paper."
+    },
+    {
+      "round": 14,
+      "player": "rock",
+      "ai": "rock",
+      "winner": "tie",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0.31,
+        0.24,
+        0.46
+      ],
+      "rationale": "After a paper it has only seen paper and rock follow, and it currently favours scissors; rock beats its scissors and ties its rock."
+    },
+    {
+      "round": 15,
+      "player": "paper",
+      "ai": "rock",
+      "winner": "player",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0.34,
+        0.24,
+        0.42
+      ],
+      "rationale": "Rock from it three times: stuck on scissors, which is also my usual follow-up to rock; paper."
+    },
+    {
+      "round": 16,
+      "player": "paper",
+      "ai": "paper",
+      "winner": "tie",
+      "ai_expected": "rock",
+      "ai_probs_rock_paper_scissors": [
+        0.61,
+        0.17,
+        0.22
+      ],
+      "rationale": "It is either still on scissors (plays rock) or has learned rock follows paper (plays paper); paper wins or ties."
+    },
+    {
+      "round": 17,
+      "player": "scissors",
+      "ai": "paper",
+      "winner": "player",
+      "ai_expected": "rock",
+      "ai_probs_rock_paper_scissors": [
+        0.35,
+        0.33,
+        0.33
+      ],
+      "rationale": "After two papers it has seen paper and rock follow, never scissors; scissors ties or wins."
+    },
+    {
+      "round": 18,
+      "player": "scissors",
+      "ai": "paper",
+      "winner": "player",
+      "ai_expected": "rock",
+      "ai_probs_rock_paper_scissors": [
+        0.35,
+        0.34,
+        0.31
+      ],
+      "rationale": "After a scissors I have always played rock, so it plays paper; scissors again."
+    },
+    {
+      "round": 19,
+      "player": "scissors",
+      "ai": "rock",
+      "winner": "ai",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0.18,
+        0.33,
+        0.49
+      ],
+      "rationale": "Rock after scissors is still two examples against one; third scissors. (Wrong: it switched to scissors a round earlier than I guessed.)"
+    },
+    {
+      "round": 20,
+      "player": "paper",
+      "ai": "rock",
+      "winner": "player",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0.4,
+        0.19,
+        0.41
+      ],
+      "rationale": "After three scissors it expects scissors and plays rock; paper."
+    },
+    {
+      "round": 21,
+      "player": "paper",
+      "ai": "scissors",
+      "winner": "ai",
+      "ai_expected": "paper",
+      "ai_probs_rock_paper_scissors": [
+        0.39,
+        0.59,
+        0.02
+      ],
+      "rationale": "It holds a guess for several rounds and its last two were scissors; paper. (Wrong: it expected paper.)"
+    },
+    {
+      "round": 22,
+      "player": "rock",
+      "ai": "scissors",
+      "winner": "player",
+      "ai_expected": "paper",
+      "ai_probs_rock_paper_scissors": [
+        0.08,
+        0.91,
+        0.01
+      ],
+      "rationale": "After two papers it expects paper or scissors; rock wins or ties."
+    },
+    {
+      "round": 23,
+      "player": "rock",
+      "ai": "scissors",
+      "winner": "player",
+      "ai_expected": "paper",
+      "ai_probs_rock_paper_scissors": [
+        0.22,
+        0.78,
+        0
+      ],
+      "rationale": "After a rock I played scissors twice and paper twice, never rock; rock ties or wins."
+    },
+    {
+      "round": 24,
+      "player": "scissors",
+      "ai": "paper",
+      "winner": "player",
+      "ai_expected": "rock",
+      "ai_probs_rock_paper_scissors": [
+        0.55,
+        0.34,
+        0.11
+      ],
+      "rationale": "It expected paper three rounds running; it stays there or picks up my rock repeat. Scissors ties or wins."
+    },
+    {
+      "round": 25,
+      "player": "paper",
+      "ai": "rock",
+      "winner": "player",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0.25,
+        0.29,
+        0.45
+      ],
+      "rationale": "After rock, scissors I played rock twice, and after scissors I also repeat scissors; it plays paper or rock, so paper ties or wins."
+    },
+    {
+      "round": 26,
+      "player": "rock",
+      "ai": "rock",
+      "winner": "tie",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0.1,
+        0.28,
+        0.62
+      ],
+      "rationale": "Last time the window ended scissors, paper it expected paper and I played paper; it should play scissors. Rock."
+    },
+    {
+      "round": 27,
+      "player": "paper",
+      "ai": "paper",
+      "winner": "tie",
+      "ai_expected": "rock",
+      "ai_probs_rock_paper_scissors": [
+        0.39,
+        0.32,
+        0.29
+      ],
+      "rationale": "It is holding scissors, which is also my most common follow-up to rock; paper against its rock. (It expected rock: tie.)"
+    },
+    {
+      "round": 28,
+      "player": "scissors",
+      "ai": "paper",
+      "winner": "player",
+      "ai_expected": "rock",
+      "ai_probs_rock_paper_scissors": [
+        0.63,
+        0.36,
+        0.01
+      ],
+      "rationale": "My recent moves alternate paper and rock and it caught that before; it expects rock and plays paper. Scissors."
+    },
+    {
+      "round": 29,
+      "player": "scissors",
+      "ai": "rock",
+      "winner": "ai",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0.01,
+        0.38,
+        0.62
+      ],
+      "rationale": "Unclear spot; it guessed rock two rounds running and tends to hold a guess, so scissors. (Wrong: it expected scissors.)"
+    },
+    {
+      "round": 30,
+      "player": "paper",
+      "ai": "rock",
+      "winner": "player",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0.04,
+        0.17,
+        0.79
+      ],
+      "rationale": "After paper, scissors, scissors I played scissors last time; it expects scissors and plays rock. Paper."
+    },
+    {
+      "round": 31,
+      "player": "rock",
+      "ai": "rock",
+      "winner": "tie",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0,
+        0,
+        1
+      ],
+      "rationale": "After scissors, scissors, paper I played paper last time and it expected paper then; rock beats its scissors."
+    },
+    {
+      "round": 32,
+      "player": "paper",
+      "ai": "scissors",
+      "winner": "ai",
+      "ai_expected": "paper",
+      "ai_probs_rock_paper_scissors": [
+        0.07,
+        0.92,
+        0.02
+      ],
+      "rationale": "Rock from it three times: stuck on scissors; paper. (Wrong: it remembered paper after paper, rock.)"
+    },
+    {
+      "round": 33,
+      "player": "paper",
+      "ai": "paper",
+      "winner": "tie",
+      "ai_expected": "rock",
+      "ai_probs_rock_paper_scissors": [
+        0.98,
+        0.02,
+        0
+      ],
+      "rationale": "Going with memory: last time in this rock-paper alternation I followed with scissors, so it plays rock; paper. (It expected rock: tie.)"
+    },
+    {
+      "round": 34,
+      "player": "rock",
+      "ai": "rock",
+      "winner": "tie",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0.07,
+        0.05,
+        0.88
+      ],
+      "rationale": "After two papers it may expect a third or scissors; rock beats scissors and ties rock."
+    },
+    {
+      "round": 35,
+      "player": "rock",
+      "ai": "rock",
+      "winner": "tie",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0,
+        0.02,
+        0.98
+      ],
+      "rationale": "After paper, rock my recent follow-ups were paper and it caught that; rock beats its scissors and ties if it stays on scissors."
+    },
+    {
+      "round": 36,
+      "player": "paper",
+      "ai": "rock",
+      "winner": "player",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0,
+        0,
+        1
+      ],
+      "rationale": "After paper, rock, rock I played scissors before, matching the guess it already holds; paper beats its rock."
+    },
+    {
+      "round": 37,
+      "player": "scissors",
+      "ai": "rock",
+      "winner": "ai",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0.01,
+        0.31,
+        0.68
+      ],
+      "rationale": "After rock, paper it has guessed rock and my latest follow-up was paper; scissors wins or ties. (Wrong: it expected scissors.)"
+    },
+    {
+      "round": 38,
+      "player": "paper",
+      "ai": "paper",
+      "winner": "tie",
+      "ai_expected": "rock",
+      "ai_probs_rock_paper_scissors": [
+        1,
+        0,
+        0
+      ],
+      "rationale": "Rock four rounds in a row from it; after paper, scissors I played scissors both times. Paper. (It expected rock: tie.)"
+    },
+    {
+      "round": 39,
+      "player": "scissors",
+      "ai": "scissors",
+      "winner": "tie",
+      "ai_expected": "paper",
+      "ai_probs_rock_paper_scissors": [
+        0.15,
+        0.8,
+        0.05
+      ],
+      "rationale": "After scissors, paper I played rock the last two times; it should play paper. Scissors."
+    },
+    {
+      "round": 40,
+      "player": "rock",
+      "ai": "rock",
+      "winner": "tie",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0,
+        0,
+        0.99
+      ],
+      "rationale": "My last four moves alternate paper and scissors; it expects paper or scissors. Rock beats or ties both."
+    },
+    {
+      "round": 41,
+      "player": "paper",
+      "ai": "scissors",
+      "winner": "ai",
+      "ai_expected": "paper",
+      "ai_probs_rock_paper_scissors": [
+        0.02,
+        0.88,
+        0.1
+      ],
+      "rationale": "After a rock it expected scissors in four of its last five tries; paper. (Wrong: it learned my paper-after-rock habit.)"
+    },
+    {
+      "round": 42,
+      "player": "rock",
+      "ai": "paper",
+      "winner": "ai",
+      "ai_expected": "rock",
+      "ai_probs_rock_paper_scissors": [
+        0.72,
+        0.28,
+        0
+      ],
+      "rationale": "After rock, paper my recent follow-ups were scissors and paper, rock only once long ago; rock. (Wrong: it read the rock-paper-rock alternation.)"
+    },
+    {
+      "round": 43,
+      "player": "rock",
+      "ai": "scissors",
+      "winner": "player",
+      "ai_expected": "paper",
+      "ai_probs_rock_paper_scissors": [
+        0.12,
+        0.88,
+        0
+      ],
+      "rationale": "Both the alternation and my rock-then-paper habit point it to paper; rock breaks the pattern."
+    },
+    {
+      "round": 44,
+      "player": "rock",
+      "ai": "scissors",
+      "winner": "player",
+      "ai_expected": "paper",
+      "ai_probs_rock_paper_scissors": [
+        0,
+        1,
+        0
+      ],
+      "rationale": "After paper, rock, rock I played scissors once and paper once, never rock; third rock ties or wins."
+    },
+    {
+      "round": 45,
+      "player": "scissors",
+      "ai": "rock",
+      "winner": "ai",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0,
+        0.01,
+        0.99
+      ],
+      "rationale": "After three rocks it keeps expecting paper or catches the streak; scissors ties or wins. (Wrong: it expected scissors.)"
+    },
+    {
+      "round": 46,
+      "player": "rock",
+      "ai": "rock",
+      "winner": "tie",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0,
+        0.05,
+        0.95
+      ],
+      "rationale": "Last time I played rock, rock, scissors I followed with paper, my common move after scissors; rock beats its scissors."
+    },
+    {
+      "round": 47,
+      "player": "rock",
+      "ai": "scissors",
+      "winner": "player",
+      "ai_expected": "paper",
+      "ai_probs_rock_paper_scissors": [
+        0,
+        0.54,
+        0.46
+      ],
+      "rationale": "After scissors, rock I played paper last time and paper after rock is my habit; rock beats that guess and ties scissors. Deliberately not paper."
+    },
+    {
+      "round": 48,
+      "player": "paper",
+      "ai": "paper",
+      "winner": "tie",
+      "ai_expected": "rock",
+      "ai_probs_rock_paper_scissors": [
+        0.78,
+        0.01,
+        0.21
+      ],
+      "rationale": "Five of my last six moves are rock; it expects rock or, as after the last rock streak, scissors. Paper ties or wins."
+    },
+    {
+      "round": 49,
+      "player": "paper",
+      "ai": "rock",
+      "winner": "player",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0,
+        0.04,
+        0.96
+      ],
+      "rationale": "Window still rock-heavy, and after rock, rock, paper I played scissors before; paper ties or wins."
+    },
+    {
+      "round": 50,
+      "player": "scissors",
+      "ai": "rock",
+      "winner": "ai",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0.01,
+        0.05,
+        0.94
+      ],
+      "rationale": "After two papers I played rock the last two times; scissors beats its paper. (Wrong: older memory of scissors won.)"
+    },
+    {
+      "round": 51,
+      "player": "paper",
+      "ai": "scissors",
+      "winner": "ai",
+      "ai_expected": "paper",
+      "ai_probs_rock_paper_scissors": [
+        0.11,
+        0.89,
+        0
+      ],
+      "rationale": "After paper, paper, scissors I played scissors before and it guessed scissors twice running; paper. (Wrong: it learned paper after scissors.)"
+    },
+    {
+      "round": 52,
+      "player": "scissors",
+      "ai": "rock",
+      "winner": "ai",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0,
+        0.01,
+        0.99
+      ],
+      "rationale": "Counting my history: after a paper I played rock 7, scissors 5, paper 4; it should play paper. Scissors. (Wrong: it read the scissors-paper alternation.)"
+    },
+    {
+      "round": 53,
+      "player": "scissors",
+      "ai": "scissors",
+      "winner": "tie",
+      "ai_expected": "paper",
+      "ai_probs_rock_paper_scissors": [
+        0.22,
+        0.77,
+        0
+      ],
+      "rationale": "It expects paper (alternation, habit) or rock (what I did here in round 40); scissors ties or wins."
+    },
+    {
+      "round": 54,
+      "player": "rock",
+      "ai": "scissors",
+      "winner": "player",
+      "ai_expected": "paper",
+      "ai_probs_rock_paper_scissors": [
+        0.02,
+        0.98,
+        0
+      ],
+      "rationale": "After two scissors I played paper twice and scissors once, never rock; rock wins or ties."
+    },
+    {
+      "round": 55,
+      "player": "rock",
+      "ai": "paper",
+      "winner": "ai",
+      "ai_expected": "rock",
+      "ai_probs_rock_paper_scissors": [
+        0.6,
+        0.34,
+        0.06
+      ],
+      "rationale": "Paper after rock is my strongest habit, so it should play scissors; rock again. (Wrong: it remembered the same trick from round 47.)"
+    },
+    {
+      "round": 56,
+      "player": "scissors",
+      "ai": "scissors",
+      "winner": "tie",
+      "ai_expected": "paper",
+      "ai_probs_rock_paper_scissors": [
+        0.27,
+        0.73,
+        0
+      ],
+      "rationale": "After scissors, rock, rock I played paper last time; it expects paper or another rock. Scissors ties or wins."
+    },
+    {
+      "round": 57,
+      "player": "scissors",
+      "ai": "paper",
+      "winner": "player",
+      "ai_expected": "rock",
+      "ai_probs_rock_paper_scissors": [
+        0.98,
+        0.02,
+        0
+      ],
+      "rationale": "After rock, rock, scissors I played paper once and rock once; scissors ties or wins."
+    },
+    {
+      "round": 58,
+      "player": "scissors",
+      "ai": "paper",
+      "winner": "player",
+      "ai_expected": "rock",
+      "ai_probs_rock_paper_scissors": [
+        0.58,
+        0.25,
+        0.17
+      ],
+      "rationale": "My last six moves look like a scissors-scissors-rock-rock pattern, so it expects rock, or paper from habit; scissors."
+    },
+    {
+      "round": 59,
+      "player": "rock",
+      "ai": "scissors",
+      "winner": "player",
+      "ai_expected": "paper",
+      "ai_probs_rock_paper_scissors": [
+        0.07,
+        0.93,
+        0
+      ],
+      "rationale": "After three scissors it expects a fourth or paper (what I did after the last such run); rock ties or wins."
+    },
+    {
+      "round": 60,
+      "player": "scissors",
+      "ai": "rock",
+      "winner": "ai",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0.01,
+        0.46,
+        0.53
+      ],
+      "rationale": "After scissors, rock my last two follow-ups were rock, before that paper; scissors wins or ties. (Wrong: scissors-heavy window, it expected scissors.)"
+    },
+    {
+      "round": 61,
+      "player": "paper",
+      "ai": "rock",
+      "winner": "player",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0.01,
+        0.4,
+        0.59
+      ],
+      "rationale": "It is in scissors mode (plays rock) and after rock, scissors I mostly played rock (plays paper); paper wins or ties."
+    },
+    {
+      "round": 62,
+      "player": "paper",
+      "ai": "rock",
+      "winner": "player",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0.39,
+        0.02,
+        0.59
+      ],
+      "rationale": "After scissors, paper I played rock twice and scissors twice recently; paper ties or wins."
+    },
+    {
+      "round": 63,
+      "player": "paper",
+      "ai": "paper",
+      "winner": "tie",
+      "ai_expected": "rock",
+      "ai_probs_rock_paper_scissors": [
+        1,
+        0,
+        0
+      ],
+      "rationale": "After two papers I played rock or scissors and it guessed scissors three rounds running; paper once more."
+    },
+    {
+      "round": 64,
+      "player": "scissors",
+      "ai": "rock",
+      "winner": "ai",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0.27,
+        0.01,
+        0.72
+      ],
+      "rationale": "After three papers it expects a fourth or rock; scissors ties or wins. (Wrong: it remembered scissors after a paper run.)"
+    },
+    {
+      "round": 65,
+      "player": "rock",
+      "ai": "rock",
+      "winner": "tie",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0.16,
+        0,
+        0.83
+      ],
+      "rationale": "After paper, scissors I played scissors or paper five times out of six; rock ties or wins."
+    },
+    {
+      "round": 66,
+      "player": "paper",
+      "ai": "rock",
+      "winner": "player",
+      "ai_expected": "scissors",
+      "ai_probs_rock_paper_scissors": [
+        0.02,
+        0,
+        0.98
+      ],
+      "rationale": "It guessed scissors two rounds running and after scissors, rock I played scissors last time; paper."
+    },
+    {
+      "round": 67,
+      "player": "scissors",
+      "ai": "paper",
+      "winner": "player",
+      "ai_expected": "rock",
+      "ai_probs_rock_paper_scissors": [
+        0.64,
+        0.36,
+        0
+      ],
+      "rationale": "After scissors, rock, paper I played rock both times before; it should play paper. Scissors."
+    },
+    {
+      "round": 68,
+      "player": "paper",
+      "ai": "paper",
+      "winner": "tie",
+      "ai_expected": "rock",
+      "ai_probs_rock_paper_scissors": [
+        0.95,
+        0.05,
+        0
+      ],
+      "rationale": "After paper, scissors it usually expects scissors, and my recent moves hint at a cycle continuing with rock; paper wins or ties."
+    },
+    {
+      "round": 69,
+      "player": "paper",
+      "ai": "paper",
+      "winner": "tie",
+      "ai_expected": "rock",
+      "ai_probs_rock_paper_scissors": [
+        0.76,
+        0.2,
+        0.03
+      ],
+      "rationale": "Both times I played paper, scissors, paper I followed with scissors, and the alternation agrees; paper against its rock. (It expected rock: tie.)"
+    },
+    {
+      "round": 70,
+      "player": "paper",
+      "ai": "paper",
+      "winner": "tie",
+      "ai_expected": "rock",
+      "ai_probs_rock_paper_scissors": [
+        0.53,
+        0,
+        0.47
+      ],
+      "rationale": "Last round. After two papers it expects rock or scissors; paper ties or wins."
+    }
+  ]
+}

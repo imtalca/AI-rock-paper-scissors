@@ -1,1 +1,5 @@
 ﻿.claude/
+sim/node_modules/
+sim/state.json
+sim/state-attention.json
+sim/*.tsv
