@@ -2,6 +2,8 @@
 
 A browser game where the computer opponent is a small neural network that **learns your habits while you play**. Every click trains it a little more, and it uses what it has learned to predict your next move and counter it.
 
+![The game: pick rock, paper or scissors, and choose the AI's brain in the top-left corner](img/rps-ai.png)
+
 I built it from scratch in a single `index.html` using plain JavaScript and [TensorFlow.js](https://www.tensorflow.org/js), as a hands-on way to learn how sequence models work, first an LSTM and then an attention model (the core idea behind transformers). Once the AI worked, I wanted to know how good it really was, so I turned it into a benchmark and had AI language models play against it: hundreds of rounds, one move at a time, each move explained.
 
 This README covers how the game works and what those matches showed.
