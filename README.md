@@ -1,5 +1,7 @@
 # Rock, Paper, Scissors vs a Neural Network
 
+**▶ Play it here: [rps.talcamusic.com](https://rps.talcamusic.com)**
+
 A browser game where the computer opponent is a small neural network that **learns your habits while you play**. Every click trains it a little more, and it uses what it has learned to predict your next move and counter it.
 
 ![The game: pick rock, paper or scissors, and choose the AI's brain in the top-left corner](img/rps-ai.png)
@@ -236,7 +238,7 @@ At this size (a 16-unit LSTM, 8-dimensional attention) the two architectures are
 
 ## Run it yourself
 
-**Play the game:** open `index.html` in a browser and use the **AI brain** list in the top-left corner to pick your opponent.
+**Play the game:** go to [rps.talcamusic.com](https://rps.talcamusic.com), or open `index.html` locally, and use the **AI brain** list in the top-left corner to pick your opponent.
 
 **Play from the command line** (in `sim/`, after `npm install`):
 
