@@ -70,6 +70,7 @@
       return youWin ? "you" : "ai";
     }
 
+    const USE_ATTENTION = true;   // true = attention model, false = LSTM
     const WINDOW = 6;          // how many past moves the model looks at
     const history = [];        // every move the PLAYER has made, in order
     let model = null;
@@ -88,10 +89,26 @@
       return vec;
     }
 
+    // Attention has no built-in sense of order, so each move also gets a
+    // position one-hot (which slot of the window it sits in):
+    //   rock at position 0 → [1,0,0,  1,0,0,0,0,0]   (3 move + WINDOW position numbers)
+    function oneHotWithPosition(move, position) {
+      const pos = new Array(WINDOW).fill(0);
+      pos[position] = 1;
+      return [...oneHot(move), ...pos];
+    }
+
+    // Encodes a window of moves as rows the current model can read:
+    //   attention → [WINDOW, 3 + WINDOW] (move + position)   LSTM → [WINDOW, 3] (move only)
+    function encodeWindow(moves) {
+      return USE_ATTENTION
+        ? moves.map((m, pos) => oneHotWithPosition(m, pos))
+        : moves.map(oneHot);
+    }
+
     // Turns `history` into training examples by sliding a window across it:
-    //   input  (x) = the WINDOW moves before position i, one one-hot row per move
+    //   input  (x) = the WINDOW moves before position i, encoded by encodeWindow
     //   target (y) = the move at position i, one-hot (3 numbers)
-    // e.g. with WINDOW = 3, [rock, rock, paper, rock] → x = [[1,0,0], [1,0,0], [0,1,0]], y = [1,0,0]
     // Returns { xs, ys } as tensors, or null if there aren't enough moves yet.
     function buildDataset() {
       // Need WINDOW moves of context PLUS one move to predict.
@@ -103,12 +120,12 @@
       // i = index of the move we're trying to predict.
       for (let i = WINDOW; i < history.length; i++) {
         const pastMoves = history.slice(i - WINDOW, i);  // the WINDOW moves before i
-        xArrays.push(pastMoves.map(oneHot));             // → WINDOW rows of 3
-        yArrays.push(oneHot(history[i]));                // → 3 numbers
+        xArrays.push(encodeWindow(pastMoves));  // → WINDOW rows
+        yArrays.push(oneHot(history[i]));       // → 3 numbers
       }
 
       return {
-        xs: tf.tensor3d(xArrays),  // shape [examples, WINDOW, 3]
+        xs: tf.tensor3d(xArrays),  // shape [examples, WINDOW, 3 (LSTM) or 3 + WINDOW (attention)]
         ys: tf.tensor2d(yArrays),  // shape [examples, 3]
       };
     }
@@ -128,6 +145,30 @@
       return model;
     }
 
+    // Builds and compiles an attention network (functional API, because Q/K/V
+    // all branch off the same embedding). Shapes shown without the batch dim:
+    //   embed    every move → 8 numbers                  [WINDOW, 8]
+    //   Q, K, V  three separate dense layers             [WINDOW, 8] each
+    //   scores   Q · Kᵀ: how relevant is move j to i     [WINDOW, WINDOW]
+    //   weights  softmax(scores): each row sums to 1     [WINDOW, WINDOW]
+    //   attn     weights · V: weighted mix of the moves  [WINDOW, 8]
+    //   output   flatten → 3 softmax units               [3]
+    function createAttentionModel() {
+      const x = tf.input({ shape: [WINDOW, 3 + WINDOW] });
+      const emb = tf.layers.dense({ units: 8 }).apply(x);
+      const q = tf.layers.dense({ units: 8 }).apply(emb);
+      const k = tf.layers.dense({ units: 8 }).apply(emb);
+      const v = tf.layers.dense({ units: 8 }).apply(emb);
+      const scores = tf.layers.dot({ axes: [2, 2] }).apply([q, k]);
+      const weights = tf.layers.softmax({ axis: -1 }).apply(scores);  // TF.js defaults to axis 1, which fails on rank 3
+      const attn = tf.layers.dot({ axes: [2, 1] }).apply([weights, v]);
+      const flat = tf.layers.flatten().apply(attn);
+      const out = tf.layers.dense({ units: 3, activation: "softmax" }).apply(flat);
+      const attentionModel = tf.model({ inputs: x, outputs: out });
+      attentionModel.compile({ optimizer: "adam", loss: "categoricalCrossentropy" });
+      return attentionModel;
+    }
+
     // Picks the AI's move: predicts the player's next move from their last
     // WINDOW moves and plays the counter. Falls back to random until the
     // model exists. Runs BEFORE the player's current move is added to
@@ -138,11 +179,11 @@
         return randomAIMove();
       }
 
-      // 1. Last WINDOW moves → one-hot rows (same format as one example of xs).
+      // 1. Last WINDOW moves → encoded rows (same format as one example of xs).
       const lastMoves = history.slice(-WINDOW);   // e.g. ["rock", "rock", "paper", ...]
-      const input = lastMoves.map(oneHot);        // e.g. [[1,0,0], [1,0,0], [0,1,0], ...]
+      const input = encodeWindow(lastMoves);
 
-      // 2. Wrap it as a batch of ONE example: shape [1, WINDOW, 3].
+      // 2. Wrap it as a batch of ONE example: shape [1, WINDOW, row size].
       const inputTensor = tf.tensor3d([input]);
 
       // 3. Run the network. Output shape [1, 3]; dataSync() → plain array.
@@ -182,7 +223,7 @@
       isTraining = true;                  // busy sign UP
       try {
         if (model === null) {
-          model = createModel();          // no `const`: fill the GLOBAL model
+          model = USE_ATTENTION ? createAttentionModel() : createModel();  // no `const`: fill the GLOBAL model
         }
         await model.fit(data.xs, data.ys, { epochs: 20, shuffle: true });
       } finally {
