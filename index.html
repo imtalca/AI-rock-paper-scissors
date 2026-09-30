@@ -27,14 +27,30 @@
       transform: translateY(-25px) scale(1.2) rotateX(10deg);
       filter: drop-shadow(0 20px 12px rgba(0, 0, 0, 0.35));
     }
-    button img { width: 250px; height: 250px; object-fit: contain; display: block; }
+    button img { width: 160px; height: 160px; object-fit: contain; display: block; }
     #result { font-size: 1.5rem; margin-top: 20px; }
     #score { font-size: 1.1rem; color: #555; }
     #brain { font-size: 0.95rem; color: #888; margin-top: 12px; font-family: monospace; }
+    .model-switch {
+      position: absolute; top: 12px; left: 12px;
+      display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+      font-size: 0.8rem; color: #999; text-align: left;
+    }
+    .model-switch input { display: none; }
+    .model-switch label { cursor: pointer; }
+    .model-switch label:hover { color: #555; }
+    .model-switch input:checked + label { color: #111; font-weight: bold; }
   </style>
 </head>
 <body>
   <h1>Rock, Paper, Scissors</h1>
+  <div class="model-switch" title="Which neural network the AI uses">
+    <span>AI brain:</span>
+    <input type="radio" name="brain-model" id="use-attention" value="attention" checked>
+    <label for="use-attention">Attention</label>
+    <input type="radio" name="brain-model" id="use-lstm" value="lstm">
+    <label for="use-lstm">LSTM</label>
+  </div>
   <div class="moves">
     <button data-move="rock"><img src="rock_transparent.png" alt="Rock"></button>
     <button data-move="paper"><img src="paper_transparent.png" alt="Paper"></button>
@@ -70,8 +86,8 @@
       return youWin ? "you" : "ai";
     }
 
-    const USE_ATTENTION = true;   // true = attention model, false = LSTM
-    const WINDOW = 6;          // how many past moves the model looks at
+    let useAttention = true;   // true = attention model, false = LSTM (set by the switch on the page)
+    const WINDOW = 6;         // how many past moves the model looks at
     const history = [];        // every move the PLAYER has made, in order
     let model = null;
     let isTraining = false;
@@ -101,7 +117,7 @@
     // Encodes a window of moves as rows the current model can read:
     //   attention → [WINDOW, 3 + WINDOW] (move + position)   LSTM → [WINDOW, 3] (move only)
     function encodeWindow(moves) {
-      return USE_ATTENTION
+      return useAttention
         ? moves.map((m, pos) => oneHotWithPosition(m, pos))
         : moves.map(oneHot);
     }
@@ -221,23 +237,53 @@
       if (data === null) return;          // not enough moves yet
 
       isTraining = true;                  // busy sign UP
+      let trained = null;
       try {
         if (model === null) {
-          model = USE_ATTENTION ? createAttentionModel() : createModel();  // no `const`: fill the GLOBAL model
+          model = useAttention ? createAttentionModel() : createModel();  // no `const`: fill the GLOBAL model
         }
-        await model.fit(data.xs, data.ys, { epochs: 20, shuffle: true });
+        trained = model;
+        await trained.fit(data.xs, data.ys, { epochs: 20, shuffle: true });
       } finally {
         isTraining = false;               // busy sign DOWN, even if fit crashed
         data.xs.dispose();
         data.ys.dispose();
+        // The switch was flipped while this model was training: drop it and train the new one.
+        if (trained !== null && trained !== model) {
+          trained.dispose();
+          trainModel();
+        }
       }
     }
 
+    // Switches between the attention model and the LSTM. The two read the
+    // moves in different formats, so the old network is thrown away and a new
+    // one is trained from scratch on the same move history. Score is kept.
+    function switchModel(toAttention) {
+      if (toAttention === useAttention) return;
+      useAttention = toAttention;
+
+      const old = model;
+      model = null;
+      if (old !== null && !isTraining) old.dispose();  // mid-training: trainModel disposes it when done
+
+      const name = useAttention ? "attention model" : "LSTM";
+      document.getElementById("brain").textContent =
+        history.length > WINDOW
+          ? `Switched to the ${name}. It starts fresh and is learning from your ${history.length} moves so far...`
+          : `Switched to the ${name}.`;
+      trainModel();
+    }
+
+    document.querySelectorAll('input[name="brain-model"]').forEach(radio => {
+      radio.addEventListener("change", () => switchModel(radio.value === "attention"));
+    });
+
     // Plays a round when a move button is clicked: gets the AI's move,
     // records the player's move, trains, and updates the score display.
-    document.querySelectorAll("button").forEach(btn => {
+    document.querySelectorAll(".moves button").forEach(btn => {
       btn.addEventListener("click", () => {
-        document.querySelectorAll("button").forEach(b => b.classList.remove("selected"));
+        document.querySelectorAll(".moves button").forEach(b => b.classList.remove("selected"));
         btn.classList.add("selected");
 
         const yourMove = btn.dataset.move;
