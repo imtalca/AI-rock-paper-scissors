@@ -2,10 +2,17 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>RPS vs AI</title>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
   <style>
-    body { font-family: sans-serif; text-align: center; padding: 40px; }
+    /* Everything (except the AI brain list) sits in one column, centred on the screen. */
+    body {
+      font-family: sans-serif; text-align: center;
+      margin: 0; padding: 40px; box-sizing: border-box;
+      min-height: 100vh; min-height: 100dvh;  /* dvh = the visible height on phones, excluding browser bars */
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+    }
     .moves {
       display: flex;
       justify-content: center;
@@ -20,14 +27,17 @@
       padding: 0;
       transition: transform 0.25s ease, filter 0.25s ease;
     }
-    button:hover {
-      transform: translateY(-8px) scale(1.05);
+    button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    /* Hover lift only on devices with a real mouse; on phones it would stick after a tap. */
+    @media (hover: hover) {
+      button:hover { transform: translateY(-8px) scale(1.05); }
     }
     button.selected {
       transform: translateY(-25px) scale(1.2) rotateX(10deg);
       filter: drop-shadow(0 20px 12px rgba(0, 0, 0, 0.35));
     }
-    button img { width: 160px; height: 160px; object-fit: contain; display: block; }
+    /* 160px on a desktop, shrinking to fit three in a row on a narrow phone. */
+    button img { width: min(160px, 26vw); height: min(160px, 26vw); object-fit: contain; display: block; }
     #result { font-size: 1.5rem; margin-top: 20px; }
     #score { font-size: 1.1rem; color: #555; }
     #brain { font-size: 0.95rem; color: #888; margin-top: 12px; font-family: monospace; }
@@ -40,6 +50,15 @@
     .model-switch label { cursor: pointer; }
     .model-switch label:hover { color: #555; }
     .model-switch input:checked + label { color: #111; font-weight: bold; }
+
+    @media (max-width: 600px) {
+      body { padding: 72px 16px 16px; }  /* top padding leaves room for the AI brain list */
+      h1 { font-size: 1.6rem; }
+      button { margin: 6px; }
+      button.selected { transform: translateY(-12px) scale(1.12); }
+      #result { font-size: 1.2rem; }
+      #brain { font-size: 0.8rem; }
+    }
   </style>
 </head>
 <body>
@@ -52,9 +71,9 @@
     <label for="use-lstm">LSTM</label>
   </div>
   <div class="moves">
-    <button data-move="rock"><img src="rock_transparent.png" alt="Rock"></button>
-    <button data-move="paper"><img src="paper_transparent.png" alt="Paper"></button>
-    <button data-move="scissors"><img src="scissors_transparent.png" alt="Scissors"></button>
+    <button data-move="rock"><img src="img/rock_transparent.png" alt="Rock"></button>
+    <button data-move="paper"><img src="img/paper_transparent.png" alt="Paper"></button>
+    <button data-move="scissors"><img src="img/scissors_transparent.png" alt="Scissors"></button>
   </div>
 
   <div id="result">Make a move!</div>
