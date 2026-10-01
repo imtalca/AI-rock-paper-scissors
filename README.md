@@ -11,6 +11,8 @@ I built it from scratch in a single `index.html` using plain JavaScript and [Ten
 This README covers how the game works and what those matches showed.
 
 > **Update:** the game now has a third brain, a **mini transformer**, built from the same block GPT uses. [See how it compares ↓](#update-a-mini-transformer)
+>
+> **Update 2:** and a fourth, a **mini GPT**: two stacked blocks, a causal mask, and GPT-style training. [Results ↓](#update-2-a-mini-gpt)
 
 ---
 
@@ -257,18 +259,18 @@ node play_attention.js status             # score and move history
 **Compare the models:**
 
 ```bash
-node compare.js                           # all three models, 150 rounds × 3 seeds, about an hour
-node compare.js --models transformer      # only some models (comma-separated), ~30 minutes for the transformer
+node compare.js                           # all four models, 150 rounds × 3 seeds, about 2 hours
+node compare.js --models gpt,transformer  # only some models (comma-separated): ~65 min GPT, ~30 min transformer
 node compare.js --rounds 60 --seeds 1     # quick run
 ```
 
 ## Repo layout
 
 ```
-index.html                  the game: UI, one-hot and positional encoding, LSTM, attention and transformer models
+index.html                  the game: UI, one-hot and positional encoding, LSTM, attention, transformer and mini GPT
 sim/play.js                 command-line match vs the LSTM (saves weights + optimizer state)
 sim/play_attention.js       same for the attention model, with a blind mode
-sim/compare.js              LSTM vs attention vs transformer on identical scripted players
+sim/compare.js              all four models on identical scripted players
 sim/PROMPT.md               the rules the AI players followed
 sim/results/                every match, round by round, with the reasoning for each move
 ```
@@ -342,3 +344,58 @@ The benchmark only measures how often the top guess is right, not how confident 
 At this size, a full transformer block is a **small upgrade, not a breakthrough**: it learns clean patterns a round or so faster than plain attention, it's no better on noise, and it needs almost twice the parameters. That's expected. A 6-move window with 3 possible symbols doesn't need much machinery. The residuals and layer norms matter when you *stack* blocks, which is where transformers get their power.
 
 That's what's next: stacking two blocks, adding a **causal mask** so each move can only look at the moves before it, and training GPT-style, with a prediction at every position in the window instead of only the last.
+
+---
+
+## Update 2: a mini GPT
+
+The fourth option in the **AI brain** list is **Mini GPT**. It takes the transformer block from the first update and adds the three things that turn "a transformer block" into "how GPT is built and trained":
+
+```
+  your last 6 moves (move + position one-hot)      [6, 9]
+                     │
+                  embed 8                           [6, 8]
+                     │
+        ┌────────────▼────────────┐
+        │  transformer block 1    │   both blocks: 2 heads, residuals,
+        ├─────────────────────────┤   layer norms, feed-forward,
+        │  transformer block 2    │   and a CAUSAL MASK in every head
+        └────────────┬────────────┘                 [6, 8]
+                     │
+        dense 3 softmax on EVERY row                [6, 3]   ← one guess per position
+```
+
+1. **Stacking.** The block is now a function, called twice in a loop: block 2 reads block 1's output. Each call creates new layers, so the two blocks learn different things. GPT-2 small does the same thing with 12 blocks.
+2. **A causal mask.** Before the softmax, every attention score where a move would look at a *later* move is set to −1,000,000,000, so its weight comes out as exactly 0. Each move can only see itself and the moves before it. TensorFlow.js has no built-in layer for this, so it's a small custom layer (`CausalMask`).
+3. **A prediction at every position.** Thanks to the mask, position *i* can honestly be asked to guess move *i + 1* without seeing it. So instead of one training example per window, each window gives six:
+
+```
+  input   rock  rock   paper     scissors  rock   paper
+  target  rock  paper  scissors  rock      paper  [next move]
+```
+
+The targets are just the input shifted one move to the left. This is exactly how GPT is trained on text, with characters instead of moves. When playing, only the last row's guess is used.
+
+It has 1,307 parameters. That's fewer than you might expect from two blocks, because the output layer now reads 8 numbers per row instead of a flattened 48.
+
+### The benchmark
+
+Same scripted players, same seeded sequences, 150 rounds × 3 seeds:
+
+| Scripted player | LSTM | Attention (2 runs) | Transformer | **Mini GPT** | Best possible |
+|---|---|---|---|---|---|
+| Cycle | 97.0% | 98.1% / 97.9% | 98.6% | **99.3%** | 100% |
+| Switching | 91.4% | 94.2% / 94.6% | 94.9% | **94.4%** | ~100% |
+| Biased (60% rock) | 46.2% | 40.1% / 45.9% | 44.5% | **45.9%** | 60% |
+| Uniform random | 35.9% | 33.1% / 35.2% | 33.1% | **33.3%** | 33% |
+
+- **Clean patterns: the best yet.** On the cycle it made 2, 1 and **0** wrong guesses in the three seeds. In one match it never missed once the network was playing. The transformer made 2 per match, attention 3, the LSTM 3 to 5. Training on every position gives it six times as many examples from the same moves, so it locks on sooner.
+- **Re-learning after the switch: slightly slower, if anything.** 98% before the reversal, the same as the transformer, but 91.1% after it, against 92–93% for the others. One possible reason: with targets at every position, the old pattern fills six times as many training examples, so there's more to unlearn. The gap is about one wrong guess, though, well within noise.
+- **Noisy bias: the first model that didn't get worse over time.** 43.6% in the first half, 48% in the second. Every other model dropped or stayed flat as its history grew. That's what you'd hope for from six times more training targets: it chases noise less. But it's a single run, and the attention re-run showed that these numbers can swing by 6 points, so I'm treating this as a hint, not a result.
+- **Random:** chance level, as it should be.
+
+### Verdict
+
+On rock, paper, scissors, the mini GPT is the most accurate model so far, but only by a round or two. Every architecture here sits within a few points of the others. Going from 443 parameters (attention) to 1,307 (mini GPT) bought faster learning on clean patterns and maybe a little resistance to noise, not a different kind of player. With a 6-move window and 3 possible symbols, there isn't much more structure to find.
+
+The interesting part is that the same three ideas (stacking, the causal mask, and a prediction at every position) are what make GPT work on text, where there *is* a lot of structure. So that's the next step: the same model in Python and PyTorch, trained on Shakespeare instead of rock, paper, scissors.

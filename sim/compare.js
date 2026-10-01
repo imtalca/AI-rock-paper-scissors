@@ -1,6 +1,6 @@
-// Compare the LSTM, the attention model and the mini transformer on the SAME
-// fixed move sequences, so the result measures the models and not whoever is
-// playing them.
+// Compare the LSTM, the attention model, the mini transformer and the mini GPT
+// on the SAME fixed move sequences, so the result measures the models and not
+// whoever is playing them.
 //
 //   node compare.js                              all models, 150 rounds, 3 seeds
 //   node compare.js --rounds 200 --seeds 5
@@ -73,12 +73,13 @@ function createAttentionModel() {
   return attentionModel;
 }
 
-function attentionHead(emb, headSize) {
+function attentionHead(emb, headSize, causal) {
   const q = tf.layers.dense({ units: headSize }).apply(emb);
   const k = tf.layers.dense({ units: headSize }).apply(emb);
   const v = tf.layers.dense({ units: headSize }).apply(emb);
   const rawScores = tf.layers.dot({ axes: [2, 2] }).apply([q, k]);
-  const scores = tf.layers.rescaling({ scale: 1 / Math.sqrt(headSize) }).apply(rawScores);
+  let scores = tf.layers.rescaling({ scale: 1 / Math.sqrt(headSize) }).apply(rawScores);
+  if (causal) scores = new CausalMask().apply(scores);
   const weights = tf.layers.softmax({ axis: -1 }).apply(scores);
   const attn = tf.layers.dot({ axes: [2, 1] }).apply([weights, v]);
   return attn;
@@ -108,11 +109,59 @@ function createTransformerModel() {
   return transformerModel;
 }
 
-// The models differ only in how a window is encoded and how the net is built.
+class CausalMask extends tf.layers.Layer {
+  static className = "CausalMask";
+  computeOutputShape(inputShape) { return inputShape; }
+  call(inputs) {
+    return tf.tidy(() => {
+      const scores = Array.isArray(inputs) ? inputs[0] : inputs;
+      const n = scores.shape[scores.shape.length - 1];
+      const allowed = tf.linalg.bandPart(tf.ones([n, n]), -1, 0);
+      return scores.add(tf.scalar(1).sub(allowed).mul(-1e9));
+    });
+  }
+}
+tf.serialization.registerClass(CausalMask);
+
+function transformerBlock(input, causal) {
+  const head1 = attentionHead(input, 4, causal);
+  const head2 = attentionHead(input, 4, causal);
+  const both = tf.layers.concatenate({ axis: -1 }).apply([head1, head2]);
+  const attn = tf.layers.dense({ units: 8 }).apply(both);
+
+  const residual = tf.layers.add().apply([input, attn]);
+  const norm1 = tf.layers.layerNormalization().apply(residual);
+
+  const feedforw = tf.layers.dense({ units: 16, activation: "relu" }).apply(norm1);
+  const feedforw2 = tf.layers.dense({ units: 8 }).apply(feedforw);
+  const residual2 = tf.layers.add().apply([norm1, feedforw2]);
+  const norm2 = tf.layers.layerNormalization().apply(residual2);
+  return norm2;
+}
+
+function createGPTModel() {
+  const x = tf.input({ shape: [WINDOW, 3 + WINDOW] });
+  const emb = tf.layers.dense({ units: 8 }).apply(x);
+
+  let h = emb;
+  for (let i = 0; i < 2; i++) {
+    h = transformerBlock(h, true);
+  }
+
+  const out = tf.layers.dense({ units: 3, activation: "softmax" }).apply(h);
+  const gptModel = tf.model({ inputs: x, outputs: out });
+  gptModel.compile({ optimizer: "adam", loss: "categoricalCrossentropy" });
+  return gptModel;
+}
+
+// The models differ in how a window is encoded, how the net is built, and
+// (mini GPT only) whether the target is the next move after EVERY position.
+const withPosition = moves => moves.map((m, pos) => oneHotWithPosition(m, pos));
 const MODELS = {
   lstm: { create: createModel, encode: moves => moves.map(oneHot) },
-  attention: { create: createAttentionModel, encode: moves => moves.map((m, pos) => oneHotWithPosition(m, pos)) },
-  transformer: { create: createTransformerModel, encode: moves => moves.map((m, pos) => oneHotWithPosition(m, pos)) },
+  attention: { create: createAttentionModel, encode: withPosition },
+  transformer: { create: createTransformerModel, encode: withPosition },
+  gpt: { create: createGPTModel, encode: withPosition, everyPosition: true },
 };
 
 // ---- Scripted players --------------------------------------------------------
@@ -157,7 +206,7 @@ const PLAYERS = {
 // ---- One match ---------------------------------------------------------------
 
 async function runMatch(modelName, sequence) {
-  const { create, encode } = MODELS[modelName];
+  const { create, encode, everyPosition } = MODELS[modelName];
   let model = null;
   const history = [];
   const half = sequence.length / 2;
@@ -172,7 +221,8 @@ async function runMatch(modelName, sequence) {
     if (history.length < WINDOW || model === null) {
       aiMove = MOVES[Math.floor(Math.random() * 3)];
     } else {
-      const probs = tf.tidy(() => model.predict(tf.tensor3d([encode(history.slice(-WINDOW))])).dataSync());
+      // slice(-3): the last row's guess (the mini GPT outputs one per position).
+      const probs = tf.tidy(() => model.predict(tf.tensor3d([encode(history.slice(-WINDOW))])).dataSync().slice(-3));
       let best = 0;
       for (let j = 1; j < 3; j++) if (probs[j] > probs[best]) best = j;
       const predicted = MOVES[best];
@@ -195,9 +245,9 @@ async function runMatch(modelName, sequence) {
       const xs = [], ys = [];
       for (let j = WINDOW; j < history.length; j++) {
         xs.push(encode(history.slice(j - WINDOW, j)));
-        ys.push(oneHot(history[j]));
+        ys.push(everyPosition ? history.slice(j + 1 - WINDOW, j + 1).map(oneHot) : oneHot(history[j]));
       }
-      const xT = tf.tensor3d(xs), yT = tf.tensor2d(ys);
+      const xT = tf.tensor3d(xs), yT = everyPosition ? tf.tensor3d(ys) : tf.tensor2d(ys);
       await model.fit(xT, yT, { epochs: 20, shuffle: true, verbose: 0 });
       xT.dispose(); yT.dispose();
     }
