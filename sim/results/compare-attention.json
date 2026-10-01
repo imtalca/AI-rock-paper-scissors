@@ -1,0 +1,76 @@
+{
+  "description": "attention on identical scripted move sequences. Accuracy = how often the model's top guess matched the player's actual move, counted only in rounds where the model was used (not the random opening).",
+  "models": [
+    "attention"
+  ],
+  "rounds_per_match": 150,
+  "seeds": 3,
+  "players": {
+    "cycle": "rock, paper, scissors repeating (fully predictable)",
+    "biased": "60% rock, 20% paper, 20% scissors, random order (best possible accuracy 60%)",
+    "switching": "rock-paper-scissors cycle for the first half, reverse cycle for the second half",
+    "random": "uniform random control (best possible accuracy 33%)"
+  },
+  "results": [
+    {
+      "player": "cycle",
+      "model": "attention",
+      "prediction_accuracy_pct": 97.9,
+      "accuracy_first_half_pct": 95.6,
+      "accuracy_second_half_pct": 100,
+      "accuracy_per_seed_pct": [
+        97.9,
+        97.9,
+        97.9
+      ],
+      "ai_win_pct": 94.2,
+      "tie_pct": 2.4,
+      "player_win_pct": 3.3
+    },
+    {
+      "player": "biased",
+      "model": "attention",
+      "prediction_accuracy_pct": 45.9,
+      "accuracy_first_half_pct": 45.6,
+      "accuracy_second_half_pct": 46.2,
+      "accuracy_per_seed_pct": [
+        42.7,
+        47.6,
+        47.6
+      ],
+      "ai_win_pct": 45.8,
+      "tie_pct": 26.9,
+      "player_win_pct": 27.3
+    },
+    {
+      "player": "switching",
+      "model": "attention",
+      "prediction_accuracy_pct": 94.6,
+      "accuracy_first_half_pct": 96.1,
+      "accuracy_second_half_pct": 93.3,
+      "accuracy_per_seed_pct": [
+        94.4,
+        93,
+        96.5
+      ],
+      "ai_win_pct": 92.2,
+      "tie_pct": 3.8,
+      "player_win_pct": 4
+    },
+    {
+      "player": "random",
+      "model": "attention",
+      "prediction_accuracy_pct": 35.2,
+      "accuracy_first_half_pct": 34.3,
+      "accuracy_second_half_pct": 36,
+      "accuracy_per_seed_pct": [
+        33.6,
+        33.6,
+        38.5
+      ],
+      "ai_win_pct": 34.9,
+      "tie_pct": 32.7,
+      "player_win_pct": 32.4
+    }
+  ]
+}

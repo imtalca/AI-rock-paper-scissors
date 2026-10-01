@@ -1,8 +1,10 @@
-// Compare the LSTM and the attention model on the SAME fixed move sequences,
-// so the result measures the models and not whoever is playing them.
+// Compare the LSTM, the attention model and the mini transformer on the SAME
+// fixed move sequences, so the result measures the models and not whoever is
+// playing them.
 //
-//   node compare.js                       150 rounds, 3 seeds
+//   node compare.js                              all models, 150 rounds, 3 seeds
 //   node compare.js --rounds 200 --seeds 5
+//   node compare.js --models transformer         only some models (comma-separated)
 //
 // Each run works exactly like the game: the AI commits to its move BEFORE
 // seeing the player's move, then the move is added to history and the model
@@ -10,7 +12,8 @@
 // The player sequences are seeded; the models' weight initialisation and
 // training shuffle are not, so repeated runs differ slightly.
 //
-// Prints a table and writes results/compare-lstm-vs-attention.json.
+// Prints a table and writes results/compare-<models>.json,
+// e.g. results/compare-transformer.json for --models transformer.
 
 const fs = require("fs");
 const path = require("path");
@@ -70,10 +73,46 @@ function createAttentionModel() {
   return attentionModel;
 }
 
-// The two models differ only in how a window is encoded and how the net is built.
+function attentionHead(emb, headSize) {
+  const q = tf.layers.dense({ units: headSize }).apply(emb);
+  const k = tf.layers.dense({ units: headSize }).apply(emb);
+  const v = tf.layers.dense({ units: headSize }).apply(emb);
+  const rawScores = tf.layers.dot({ axes: [2, 2] }).apply([q, k]);
+  const scores = tf.layers.rescaling({ scale: 1 / Math.sqrt(headSize) }).apply(rawScores);
+  const weights = tf.layers.softmax({ axis: -1 }).apply(scores);
+  const attn = tf.layers.dot({ axes: [2, 1] }).apply([weights, v]);
+  return attn;
+}
+
+function createTransformerModel() {
+  const x = tf.input({ shape: [WINDOW, 3 + WINDOW] });
+  const emb = tf.layers.dense({ units: 8 }).apply(x);
+
+  const head1 = attentionHead(emb, 4);
+  const head2 = attentionHead(emb, 4);
+  const both = tf.layers.concatenate({ axis: -1 }).apply([head1, head2]);
+  const attn = tf.layers.dense({ units: 8 }).apply(both);
+
+  const residual = tf.layers.add().apply([emb, attn]);
+  const norm1 = tf.layers.layerNormalization().apply(residual);
+
+  const feedforw = tf.layers.dense({ units: 16, activation: "relu" }).apply(norm1);
+  const feedforw2 = tf.layers.dense({ units: 8 }).apply(feedforw);
+  const residual2 = tf.layers.add().apply([norm1, feedforw2]);
+  const norm2 = tf.layers.layerNormalization().apply(residual2);
+
+  const flat = tf.layers.flatten().apply(norm2);
+  const out = tf.layers.dense({ units: 3, activation: "softmax" }).apply(flat);
+  const transformerModel = tf.model({ inputs: x, outputs: out });
+  transformerModel.compile({ optimizer: "adam", loss: "categoricalCrossentropy" });
+  return transformerModel;
+}
+
+// The models differ only in how a window is encoded and how the net is built.
 const MODELS = {
   lstm: { create: createModel, encode: moves => moves.map(oneHot) },
   attention: { create: createAttentionModel, encode: moves => moves.map((m, pos) => oneHotWithPosition(m, pos)) },
+  transformer: { create: createTransformerModel, encode: moves => moves.map((m, pos) => oneHotWithPosition(m, pos)) },
 };
 
 // ---- Scripted players --------------------------------------------------------
@@ -181,11 +220,14 @@ async function main() {
   await tf.setBackend("cpu");
   const rounds = argValue("rounds", 150);
   const seeds = argValue("seeds", 3);
-  console.log(`Rounds per match: ${rounds}   Seeds: ${seeds}\n`);
+  const modelsArg = process.argv.indexOf("--models");
+  const modelNames = modelsArg === -1 ? Object.keys(MODELS) : process.argv[modelsArg + 1].split(",");
+  for (const name of modelNames) if (!MODELS[name]) throw new Error(`Unknown model "${name}"`);
+  console.log(`Models: ${modelNames.join(", ")}   Rounds per match: ${rounds}   Seeds: ${seeds}\n`);
 
   const results = [];
   for (const playerName of Object.keys(PLAYERS)) {
-    for (const modelName of Object.keys(MODELS)) {
+    for (const modelName of modelNames) {
       const total = { predicted: 0, correct: 0, aiWins: 0, playerWins: 0, ties: 0,
                       firstHalf: { predicted: 0, correct: 0 }, secondHalf: { predicted: 0, correct: 0 } };
       const perSeed = [];
@@ -212,7 +254,7 @@ async function main() {
       };
       results.push(row);
       console.log(
-        `${playerName.padEnd(10)} ${modelName.padEnd(10)} ` +
+        `${playerName.padEnd(10)} ${modelName.padEnd(12)} ` +
         `accuracy ${String(row.prediction_accuracy_pct).padStart(5)}%  ` +
         `(1st half ${String(row.accuracy_first_half_pct).padStart(5)}%, 2nd half ${String(row.accuracy_second_half_pct).padStart(5)}%)  ` +
         `AI wins ${String(row.ai_win_pct).padStart(5)}%  ties ${String(row.tie_pct).padStart(5)}%  player wins ${String(row.player_win_pct).padStart(5)}%`
@@ -220,9 +262,10 @@ async function main() {
     }
   }
 
-  const outFile = path.join(__dirname, "results", "compare-lstm-vs-attention.json");
+  const outFile = path.join(__dirname, "results", `compare-${modelNames.join("-vs-")}.json`);
   fs.writeFileSync(outFile, JSON.stringify({
-    description: "LSTM vs attention model on identical scripted move sequences. Accuracy = how often the model's top guess matched the player's actual move, counted only in rounds where the model was used (not the random opening).",
+    description: `${modelNames.join(" vs ")} on identical scripted move sequences. Accuracy = how often the model's top guess matched the player's actual move, counted only in rounds where the model was used (not the random opening).`,
+    models: modelNames,
     rounds_per_match: rounds,
     seeds,
     players: {

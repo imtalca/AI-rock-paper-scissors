@@ -10,6 +10,8 @@ I built it from scratch in a single `index.html` using plain JavaScript and [Ten
 
 This README covers how the game works and what those matches showed.
 
+> **Update:** the game now has a third brain, a **mini transformer**, built from the same block GPT uses. [See how it compares ↓](#update-a-mini-transformer)
+
 ---
 
 ## How the game works
@@ -213,6 +215,8 @@ The matches above measure the *player* as much as the model. To compare the mode
 
 At this size (a 16-unit LSTM, 8-dimensional attention) the two architectures are roughly equal. The differences are a few points, and only the biased-player gap is big enough to take semi-seriously.
 
+*Correction: a later re-run showed that even the biased-player gap is within run-to-run noise. See the [update](#update-a-mini-transformer).*
+
 ---
 
 ## Unexpected findings
@@ -253,17 +257,18 @@ node play_attention.js status             # score and move history
 **Compare the models:**
 
 ```bash
-node compare.js                           # 150 rounds × 3 seeds, about 25 minutes
+node compare.js                           # all three models, 150 rounds × 3 seeds, about an hour
+node compare.js --models transformer      # only some models (comma-separated), ~30 minutes for the transformer
 node compare.js --rounds 60 --seeds 1     # quick run
 ```
 
 ## Repo layout
 
 ```
-index.html                  the game: UI, one-hot and positional encoding, LSTM and attention models
+index.html                  the game: UI, one-hot and positional encoding, LSTM, attention and transformer models
 sim/play.js                 command-line match vs the LSTM (saves weights + optimizer state)
 sim/play_attention.js       same for the attention model, with a blind mode
-sim/compare.js              LSTM vs attention on identical scripted players
+sim/compare.js              LSTM vs attention vs transformer on identical scripted players
 sim/PROMPT.md               the rules the AI players followed
 sim/results/                every match, round by round, with the reasoning for each move
 ```
@@ -281,3 +286,59 @@ The attention model here is a single attention layer, which is the core idea of 
 Then I'll run it through the same tests against the current attention model: the scripted-player benchmark, and fresh matches with and without hints.
 
 Will a proper transformer block read players better, or just overfit faster on a 6-move window? That's the next experiment.
+
+---
+
+## Update: a mini transformer
+
+The game now has a third option in the **AI brain** list: **Transformer**. It's one transformer block, the same structure as a single layer of GPT, just tiny (827 parameters, vs 443 for the attention model):
+
+```
+  x ──► embed ──┬──► head 1 ─┐                          (each head: Q, K, V,
+                └──► head 2 ─┴► concat ► dense 8          scores / √d, softmax)
+           │                                  │
+           └───────────── add ◄───────────────┘   residual 1
+                           │
+                    layerNormalization
+                           ├──► dense 16 relu ► dense 8   feed-forward
+                           │                       │
+                           └──────── add ◄─────────┘    residual 2
+                                      │
+                              layerNormalization ► flatten ► dense 3 softmax
+```
+
+What each new piece does:
+
+- **Scaled scores.** A score is a dot product of `d` numbers, so it grows with `d`. Dividing by `√d` keeps the scores in a range where the softmax doesn't put ~100% on a single move.
+- **Two heads.** Each head has its own Q, K and V, so one can learn "look at the last move" while the other learns "look at what happened last time". Two heads of size 4, joined back to 8, then mixed by a dense layer.
+- **Residual connections.** The block adds its input back to its output, so it only has to learn a *correction*. If attention is useless early on, the plain embedding still gets through.
+- **Layer normalisation.** Rescales each move's numbers to mean 0 and spread 1, which keeps training stable.
+- **Feed-forward.** Attention *mixes* information between moves; the feed-forward layer then *thinks about each move on its own*, widening to 16 numbers and back to 8.
+
+### The benchmark
+
+Same scripted players, same seeded move sequences, 150 rounds × 3 seeds. I also re-ran the attention model, because the models' starting weights are random, and I wanted to know how much the numbers move between two runs of the *same* model:
+
+| Scripted player | LSTM | Attention (run 1) | Attention (run 2) | **Transformer** | Best possible |
+|---|---|---|---|---|---|
+| Cycle (rock → paper → scissors → …) | 97.0% | 98.1% | 97.9% | **98.6%** | 100% |
+| Switching (cycle reverses halfway) | 91.4% | 94.2% | 94.6% | **94.9%** | ~100% |
+| Biased (60% rock, random order) | 46.2% | 40.1% | 45.9% | **44.5%** | 60% |
+| Uniform random (control) | 35.9% | 33.1% | 35.2% | **33.1%** | 33% |
+
+- **Clean patterns: the transformer learns fastest, by a little.** On the cycle it made exactly 2 wrong guesses per match before locking on, in all three seeds. Attention needed 3 and the LSTM 3 to 5. On the switching player it was 98% accurate in the first half, against 96% for attention and 92% for the LSTM.
+- **Re-learning after the switch: no better.** In the second half, after the cycle reverses, all three models make about 5 to 7 wrong guesses while they adapt (transformer 92.0%, attention 92.4–93.3%, LSTM 90.7%).
+- **Noisy bias: still not solved.** The transformer still doesn't find "just guess rock". It goes from 49% in the first half to 40% in the second, the same overfitting the LSTM showed.
+- **The re-run is the real lesson.** The *same* attention model scored 40.1% on the biased player in one run and 45.9% in the next, on identical move sequences. That 6-point swing comes purely from random starting weights, and it's as big as the LSTM-vs-attention gap I called "semi-serious" in Part 4. So on noisy data, none of these models is meaningfully better than the others.
+
+### What about the overconfidence?
+
+I expected the `√d` scaling to fix the 99%-sure-and-wrong predictions from the matches. Building it taught me why it can't on its own: `√d` calms the **attention weights** (how much each move looks at the others), but the overconfidence was in the **final output** (rock 99%). That comes from training 20 epochs on a small, shifting history after every click, and `√d` doesn't touch it. Also, with `d = 4`, the scaling only halves the scores.
+
+The benchmark only measures how often the top guess is right, not how confident it is, so I haven't measured this yet. The next step is fresh matches against the transformer, with and without the prediction line, to see whether its confidence numbers mean more than the attention model's.
+
+### Verdict
+
+At this size, a full transformer block is a **small upgrade, not a breakthrough**: it learns clean patterns a round or so faster than plain attention, it's no better on noise, and it needs almost twice the parameters. That's expected. A 6-move window with 3 possible symbols doesn't need much machinery. The residuals and layer norms matter when you *stack* blocks, which is where transformers get their power.
+
+That's what's next: stacking two blocks, adding a **causal mask** so each move can only look at the moves before it, and training GPT-style, with a prediction at every position in the window instead of only the last.
