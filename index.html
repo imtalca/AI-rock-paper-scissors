@@ -55,6 +55,7 @@
     }
     .model-switch input { display: none; }
     .model-switch label { cursor: pointer; }
+    .model-switch label::before { content: "- "; }
     .model-switch label:hover { color: #555; }
     .model-switch input:checked + label { color: #111; font-weight: bold; }
 
@@ -65,6 +66,7 @@
         position: static; flex-direction: row; align-items: center; gap: 12px;
         padding: 6px 14px; margin-bottom: 16px; font-size: 0.85rem;
       }
+      .model-switch label::before { content: none; }
       h1 { font-size: 1.5rem; margin: 0 0 10px; }
       button { margin: 6px; }
       button.selected { transform: translateY(-12px) scale(1.12); }
@@ -79,6 +81,8 @@
     <span>AI brain:</span>
     <input type="radio" name="brain-model" id="use-attention" value="attention" checked>
     <label for="use-attention">Attention</label>
+    <input type="radio" name="brain-model" id="use-transformer" value="transformer">
+    <label for="use-transformer">Transformer</label>
     <input type="radio" name="brain-model" id="use-lstm" value="lstm">
     <label for="use-lstm">LSTM</label>
   </div>
@@ -117,7 +121,7 @@
       return youWin ? "you" : "ai";
     }
 
-    let useAttention = true;   // true = attention model, false = LSTM (set by the switch on the page)
+    let brain = "attention";   // "attention", "transformer" or "lstm" (set by the switch on the page)
     const WINDOW = 6;         // how many past moves the model looks at
     const history = [];        // every move the PLAYER has made, in order
     let model = null;
@@ -146,11 +150,11 @@
     }
 
     // Encodes a window of moves as rows the current model can read:
-    //   attention → [WINDOW, 3 + WINDOW] (move + position)   LSTM → [WINDOW, 3] (move only)
+    //   attention / transformer → [WINDOW, 3 + WINDOW] (move + position)   LSTM → [WINDOW, 3] (move only)
     function encodeWindow(moves) {
-      return useAttention
-        ? moves.map((m, pos) => oneHotWithPosition(m, pos))
-        : moves.map(oneHot);
+      return brain === "lstm"
+        ? moves.map(oneHot)
+        : moves.map((m, pos) => oneHotWithPosition(m, pos));
     }
 
     // Turns `history` into training examples by sliding a window across it:
@@ -216,6 +220,82 @@
       return attentionModel;
     }
 
+    // One attention head (scaled dot-product attention). Each call creates new
+    // Q/K/V layers, so every head learns its own weights.
+    //   emb      the block's input                          [WINDOW, 8]
+    //   Q, K, V  dense layers of headSize units             [WINDOW, headSize]
+    //   scores   Q · Kᵀ / √headSize: relevance of j to i    [WINDOW, WINDOW]
+    //            (dividing by √d stops big dot products from making the
+    //            softmax put ~100% on a single move)
+    //   weights  softmax(scores): each row sums to 1        [WINDOW, WINDOW]
+    //   returns  weights · V: weighted mix of the moves     [WINDOW, headSize]
+    function attentionHead(emb, headSize) {
+      const q = tf.layers.dense({ units: headSize }).apply(emb);
+      const k = tf.layers.dense({ units: headSize }).apply(emb);
+      const v = tf.layers.dense({ units: headSize }).apply(emb);
+      const rawScores = tf.layers.dot({ axes: [2, 2] }).apply([q, k]);
+      const scores = tf.layers.rescaling({ scale: 1 / Math.sqrt(headSize) }).apply(rawScores);
+      const weights = tf.layers.softmax({ axis: -1 }).apply(scores);
+      const attn = tf.layers.dot({ axes: [2, 1] }).apply([weights, v]);
+      return attn;
+    }
+
+    // Builds and compiles a one-block transformer, the same block as in GPT,
+    // just tiny. Shapes shown without the batch dim:
+    //
+    //   x ──► embed ──┬──► head 1 ─┐                          (each head: Q, K, V,
+    //                 └──► head 2 ─┴► concat ► dense 8          scores / √d, softmax)
+    //            │                                  │
+    //            └───────────── add ◄───────────────┘   residual 1
+    //                            │
+    //                     layerNormalization
+    //                            ├──► dense 16 relu ► dense 8   feed-forward
+    //                            │                       │
+    //                            └──────── add ◄─────────┘    residual 2
+    //                                       │
+    //                               layerNormalization ► flatten ► dense 3 softmax
+    //
+    //   multi-head  two heads of 4 look at the moves in different ways;
+    //               concat → 8, then a dense layer mixes what they found
+    //   residual    adds the input back, so the block only learns a correction
+    //               and the plain embedding still gets through early on
+    //   layer norm  rescales each row to mean 0, spread 1 so values stay stable
+    //   feed-fwd    attention MIXES moves; this THINKS about each move on its
+    //               own (a dense layer on a 3D tensor acts on every row)
+    function createTransformerModel() {
+      const x = tf.input({ shape: [WINDOW, 3 + WINDOW] });
+      const emb = tf.layers.dense({ units: 8 }).apply(x);                       // [WINDOW, 8]
+
+      // Multi-head attention.
+      const head1 = attentionHead(emb, 4);                                      // [WINDOW, 4]
+      const head2 = attentionHead(emb, 4);                                      // [WINDOW, 4]
+      const both = tf.layers.concatenate({ axis: -1 }).apply([head1, head2]);   // [WINDOW, 8]
+      const attn = tf.layers.dense({ units: 8 }).apply(both);                   // [WINDOW, 8]
+
+      // Residual 1 + layer norm.
+      const residual = tf.layers.add().apply([emb, attn]);
+      const norm1 = tf.layers.layerNormalization().apply(residual);
+
+      // Feed-forward (widen to 16, back to 8 so it can be added) + residual 2 + layer norm.
+      const feedforw = tf.layers.dense({ units: 16, activation: "relu" }).apply(norm1);  // [WINDOW, 16]
+      const feedforw2 = tf.layers.dense({ units: 8 }).apply(feedforw);                    // [WINDOW, 8]
+      const residual2 = tf.layers.add().apply([norm1, feedforw2]);
+      const norm2 = tf.layers.layerNormalization().apply(residual2);
+
+      const flat = tf.layers.flatten().apply(norm2);
+      const out = tf.layers.dense({ units: 3, activation: "softmax" }).apply(flat);
+      const transformerModel = tf.model({ inputs: x, outputs: out });
+      transformerModel.compile({ optimizer: "adam", loss: "categoricalCrossentropy" });
+      return transformerModel;
+    }
+
+    // Builds the model picked by the switch on the page.
+    function createSelectedModel() {
+      if (brain === "transformer") return createTransformerModel();
+      if (brain === "attention") return createAttentionModel();
+      return createModel();
+    }
+
     // Picks the AI's move: predicts the player's next move from their last
     // WINDOW moves and plays the counter. Falls back to random until the
     // model exists. Runs BEFORE the player's current move is added to
@@ -271,7 +351,7 @@
       let trained = null;
       try {
         if (model === null) {
-          model = useAttention ? createAttentionModel() : createModel();  // no `const`: fill the GLOBAL model
+          model = createSelectedModel();  // no `const`: fill the GLOBAL model
         }
         trained = model;
         await trained.fit(data.xs, data.ys, { epochs: 20, shuffle: true });
@@ -287,18 +367,18 @@
       }
     }
 
-    // Switches between the attention model and the LSTM. The two read the
-    // moves in different formats, so the old network is thrown away and a new
-    // one is trained from scratch on the same move history. Score is kept.
-    function switchModel(toAttention) {
-      if (toAttention === useAttention) return;
-      useAttention = toAttention;
+    // Switches to another model. Each one is shaped differently, so the old
+    // network is thrown away and a new one is trained from scratch on the same
+    // move history. Score is kept.
+    function switchModel(newBrain) {
+      if (newBrain === brain) return;
+      brain = newBrain;
 
       const old = model;
       model = null;
       if (old !== null && !isTraining) old.dispose();  // mid-training: trainModel disposes it when done
 
-      const name = useAttention ? "attention model" : "LSTM";
+      const name = { attention: "attention model", transformer: "transformer", lstm: "LSTM" }[brain];
       document.getElementById("brain").textContent =
         history.length > WINDOW
           ? `Switched to the ${name}. It starts fresh and is learning from your ${history.length} moves so far...`
@@ -307,7 +387,7 @@
     }
 
     document.querySelectorAll('input[name="brain-model"]').forEach(radio => {
-      radio.addEventListener("change", () => switchModel(radio.value === "attention"));
+      radio.addEventListener("change", () => switchModel(radio.value));
     });
 
     // Plays a round when a move button is clicked: gets the AI's move,
